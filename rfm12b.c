@@ -86,7 +86,7 @@ MODULE_PARM_DESC(jee_autoack,
 #define RF_EXTRA_LEN       4 // 4 : 1 byte hdr, 1 byte len, 2 bytes crc16 (see JeeLib)
 #define RF_MAX_LEN         (RF_MAX_DATA_LEN+RF_EXTRA_LEN)
 
-#define OPEN_WAIT_MILLIS   (50)
+#define OPEN_WAIT_MILLIS   (100)
 
 #define READ_FIFO_WAIT           (0)
 #define WRITE_TX_WAIT            (0)
@@ -718,8 +718,10 @@ rfm12_finish_sending(struct rfm12_data* rfm12, int success)
       
       if (rfm12->out_cur_end == rfm12->out_buf) {
          // If buffer is empty set TX to low
+         msleep(10);
          pin_low(TX_P, TX_PIN);
          pin_high(RX_P, RX_PIN);
+         msleep(10);
       }
       
       rfm12->pkts_sent++;
@@ -949,18 +951,19 @@ rfm12_trysend_completion_handler(void *arg)
       
    if ((RFM12_STATE_IDLE == rfm12->state || RFM12_STATE_LISTEN == rfm12->state) &&
        0 == (status & RF_STATUS_BIT_RSSI)) {
-      uint16_t cmd[4];
+      uint16_t cmd[64];
+      uint8_t numCmds = 0;
             
-      cmd[0] = RF_IDLE_MODE;
-      cmd[1] = RF_READ_STATUS;
-      cmd[2] = RF_RX_FIFO_READ;
-      cmd[3] = RF_XMITTER_ON;
-      
+      cmd[numCmds++] = RF_IDLE_MODE;
+      cmd[numCmds++] = RF_READ_STATUS;
+      cmd[numCmds++] = RF_RX_FIFO_READ;
+      cmd[numCmds++] = RF_XMITTER_ON;
+
       rfm12->state = RFM12_STATE_SEND_PRE1;
       
       rfm12_update_rxtx_watchdog(rfm12, 0);
             
-      rfm12_send_generic_async_cmd(rfm12, cmd, 4,
+      rfm12_send_generic_async_cmd(rfm12, cmd, numCmds,
             0, NULL, RFM12_STATE_NO_CHANGE);
    } else if (RFM12_STATE_SEND_PRE1 > rfm12->state) {
       // try again a bit later...
@@ -1178,6 +1181,7 @@ size_t count, loff_t *f_pos)
       // No send in progress
       pin_low(RX_P, RX_PIN);
       pin_high(TX_P, TX_PIN);
+      msleep(5);
    }
 
    copied = bytes_to_copy - copy_from_user(
@@ -1397,8 +1401,10 @@ rfm12_open(struct inode *inode, struct file *filp)
       rfm12->jee_id = jee_id;
       rfm12->jee_autoack = jee_autoack;
       rfm12->tx_freq_off_12 = 1905 /* 869.525 MHz */;
-      rfm12->tx_power_3 = 0b111 /* -17.5 dB off 27dBm (500mW) ~= 9 mW */;
-      rfm12->tx_bandwidth_4 = 0b0000 /* ~30 kHz */;
+      //rfm12->tx_power_3 = 0b111 /* -17.5 dB off 27dBm (500mW) ~= 9 mW */;
+      rfm12->tx_power_3 = 0b000; // max power ftw! ~500mW
+      //rfm12->tx_bandwidth_4 = 0b0000 /* ~30 kHz */;
+      rfm12->tx_bandwidth_4 = 0b1000; // more bandwidth for debugging
       
       if (0 == err)
           err = rfm12_setup(rfm12);
